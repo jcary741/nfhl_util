@@ -10,7 +10,6 @@ use clap::{Args, Parser, Subcommand};
 use serde_json::{json};
 use serde::{Serialize, Deserialize};
 use regex::Regex;
-
 use scraper::{Html, Selector};
 
 #[derive(Debug, Parser)]
@@ -71,20 +70,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             if let Some(outfile_dir) = outfile.parent() {
                 std::fs::create_dir_all(outfile_dir)?;
             }
-            // let mut f = File::create(outfile)?;
-            //
-            // inventory_states();
-            //
-            //
-            // let json = json!({
-            //     "name": "John Doe",
-            //     "age": 43,
-            //     "phones": [
-            //         "+44 1234567",
-            //         "+44 2345678"
-            //     ]
-            // });
-            // serde_json::to_writer(f, &json)?;
+            let f = File::create(outfile)?;
+
+            let inv = get_effective_state_products().unwrap();
+
+            serde_json::to_writer(f, &inv)?;
         }
         Commands::Counties { outfile, politeness } => {
             if let Some(outfile_dir) = outfile.parent() {
@@ -92,7 +82,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
             let f = File::create(outfile)?;
 
-            let inv = get_all_effective_county_products().unwrap();
+            let inv = get_effective_county_products().unwrap();
 
             serde_json::to_writer(f, &inv)?;
         }
@@ -109,7 +99,43 @@ pub struct InventoryEntry {
     preliminary_file_date: String,
 }
 
-pub fn inventory_states() -> Result<HashMap<String, InventoryEntry>, Box<dyn std::error::Error>> {
+#[derive(Deserialize, Debug)]
+pub struct SearchResults {
+    #[serde(rename(deserialize = "EFFECTIVE"))]
+    effective: SearchResultEffective,
+    #[serde(rename(deserialize = "PRELIM_FIRM_DB"))]
+    preliminary: Option<Vec<SearchResultProductEntry>>,
+}
+
+#[derive(Deserialize, Debug)]
+pub struct SearchResultEffective {
+    #[serde(rename(deserialize = "NFHL_COUNTY_DATA"))]
+    county: Option<Vec<SearchResultProductEntry>>,
+    #[serde(rename(deserialize = "NFHL_STATE_DATA"))]
+    state: Option<Vec<SearchResultProductEntry>>,
+}
+
+#[derive(Deserialize, Debug)]
+pub struct SearchResultProductEntry {
+    #[serde(rename(deserialize = "product_TYPE_ID"))]
+    type_id: String,
+    #[serde(rename(deserialize = "product_SUBTYPE_ID"))]
+    subtype_id: String,
+    #[serde(rename(deserialize = "product_NAME"))]
+    name: String,
+    #[serde(rename(deserialize = "product_ID"))]
+    id: usize, // so far as I can tell, these ids are useless. Use "name" instead.
+    #[serde(rename(deserialize = "product_EFFECTIVE_DATE_STRING"))]
+    effective_date: Option<String>,
+    #[serde(rename(deserialize = "product_FILE_PATH"))]
+    filename: Option<String>,
+    #[serde(rename(deserialize = "product_FILE_SIZE"))]
+    filesize: Option<String>
+}
+
+
+
+pub fn get_effective_state_products() -> Result<HashMap<String, InventoryEntry>, Box<dyn std::error::Error>> {
     // let fema_region_states = vec![
     //     Vec!["ME", "NH", "VT", "MA", "CT", "RI"],
     //     Vec!["NY", "NJ", "PR", "VI"],
@@ -123,90 +149,110 @@ pub fn inventory_states() -> Result<HashMap<String, InventoryEntry>, Box<dyn std
     //     Vec!["AK", "WA", "OR", "ID"],
     // ];
 
-    let state_to_fips = HashMap::from([
-        ("AK", "02"),
-        ("AL", "01"),
-        ("AR", "05"),
-        ("AS", "60"),
-        ("AZ", "04"),
-        ("CA", "06"),
-        ("CO", "08"),
-        ("CT", "09"),
-        ("DC", "11"),
-        ("DE", "10"),
-        ("FL", "12"),
-        ("GA", "13"),
-        ("GU", "66"),
-        ("HI", "15"),
-        ("IA", "19"),
-        ("ID", "16"),
-        ("IL", "17"),
-        ("IN", "18"),
-        ("KS", "20"),
-        ("KY", "21"),
-        ("LA", "22"),
-        ("MA", "25"),
-        ("MD", "24"),
-        ("ME", "23"),
-        ("MI", "26"),
-        ("MN", "27"),
-        ("MO", "29"),
-        ("MS", "28"),
-        ("MT", "30"),
-        ("NC", "37"),
-        ("ND", "38"),
-        ("NE", "31"),
-        ("NH", "33"),
-        ("NJ", "34"),
-        ("NM", "35"),
-        ("NV", "32"),
-        ("NY", "36"),
-        ("OH", "39"),
-        ("OK", "40"),
-        ("OR", "41"),
-        ("PA", "42"),
-        ("PR", "72"),
-        ("RI", "44"),
-        ("SC", "45"),
-        ("SD", "46"),
-        ("TN", "47"),
-        ("TX", "48"),
-        ("UT", "49"),
-        ("VA", "51"),
-        ("VI", "78"),
-        ("VT", "50"),
-        ("WA", "53"),
-        ("WI", "55"),
-        ("WV", "54"),
-        ("WY", "56"),
-        ("MH", "68"), // may not be available in MSC
-        ("MP", "69"),
-        ("FM", "64") // may not be available in MSC
+    // in order to query msc.fema.gov, we must look for a specific community. To that end, each state has a county.
+    let state_to_representative_county = HashMap::from([
+        // ("AK", "02"),
+        ("AL", "01101"),
+        ("AR", "05029"),
+        // ("AS", "60"),
+        // ("AZ", "04"),
+        // ("CA", "06"),
+        // ("CO", "08"),
+        // ("CT", "09"),
+        // ("DC", "11"),
+        // ("DE", "10"),
+        // ("FL", "12"),
+        // ("GA", "13"),
+        // ("GU", "66"),
+        // ("HI", "15"),
+        // ("IA", "19"),
+        // ("ID", "16"),
+        // ("IL", "17"),
+        // ("IN", "18"),
+        // ("KS", "20"),
+        // ("KY", "21"),
+        // ("LA", "22"),
+        // ("MA", "25"),
+        // ("MD", "24"),
+        // ("ME", "23"),
+        // ("MI", "26"),
+        // ("MN", "27"),
+        // ("MO", "29"),
+        // ("MS", "28"),
+        // ("MT", "30"),
+        // ("NC", "37"),
+        // ("ND", "38"),
+        // ("NE", "31"),
+        // ("NH", "33"),
+        // ("NJ", "34"),
+        // ("NM", "35"),
+        // ("NV", "32"),
+        // ("NY", "36"),
+        // ("OH", "39"),
+        // ("OK", "40"),
+        // ("OR", "41"),
+        // ("PA", "42"),
+        // ("PR", "72"),
+        // ("RI", "44"),
+        // ("SC", "45"),
+        // ("SD", "46"),
+        // ("TN", "47"),
+        // ("TX", "48"),
+        // ("UT", "49"),
+        // ("VA", "51"),
+        // ("VI", "78"),
+        // ("VT", "50"),
+        // ("WA", "53"),
+        // ("WI", "55"),
+        // ("WV", "54"),
+        // ("WY", "56"),
+        // ("MH", "68"), // may not be available in MSC
+        // ("MP", "69"),
+        // ("FM", "64") // may not be available in MSC
     ]);
 
-    let inv = HashMap::<String, InventoryEntry>::with_capacity(57);
-    for (state, state_code) in state_to_fips.iter() {
-        let state_code = state_to_fips[state];
-        // https://msc.fema.gov/portal/advanceSearch
-        let client = reqwest::blocking::Client::builder().cookie_store(true).build()?;
-        client.post("https://www.lycamobile.es/wp-admin/admin-ajax.php")
-            .form(&[
-                ("action", "lyca_login_ajax"),
-                ("method", "login"),
-                ("mobile_no", "<MOBILE_PHONE_NUMBER>"),
-                ("pass", "<SUPER_SECRET_PASSWORD>")
-            ])
-            .send()?;
 
-        let response = client.get("https://www.lycamobile.es/es/my-account/").send()?;
-        let body_response = response.text()?;
+
+    let mut inv = HashMap::<String, InventoryEntry>::with_capacity(57);
+
+    let client = reqwest::blocking::Client::builder().cookie_store(true).build()?;
+    // do a search query once just to start a session (sessions are stateful)
+    let a = client.get("https://msc.fema.gov/portal/advanceSearch").send()?;
+
+
+    for (&state, &representative_county) in state_to_representative_county.iter(){
+        let state_code = &representative_county[..2];
+        // https://msc.fema.gov/portal/advanceSearch
+
+        // let b = client.get(format!("https://msc.fema.gov/portal/advanceSearch?getCommunity={}&state={}",representative_county, state_code))
+        //     .send()?;
+
+
+        let b: SearchResults = client.post(format!("https://msc.fema.gov/portal/advanceSearch"))
+            .form(&[
+                ("utf8", "✓"), // I kid you not, this is included in every post to the official site.
+                ("affiliate", "fema"),
+                ("query", ""), // intentionally blank?
+                ("selstate", state_code),
+                ("selcounty", representative_county),
+                ("selcommunity", &format!("{}C", representative_county)),
+                ("jurisdictionkey", ""),
+                ("searchedCid", &format!("{}C", representative_county)),
+                ("searchedDateStart", ""),
+                ("searchedDateEnd", ""),
+                ("txtstartdate", ""),
+                ("txtenddate", ""),
+                ("method", "search")
+            ])
+            .send()?.json()?;
+        dbg!(&b);
     }
 
     Ok(inv)
 }
 
 
-pub fn get_all_effective_county_products() -> Result<HashMap<String, InventoryEntry>, Box<dyn std::error::Error>> {
+pub fn get_effective_county_products() -> Result<HashMap<String, InventoryEntry>, Box<dyn std::error::Error>> {
     let client = reqwest::blocking::Client::builder().cookie_store(true).build()?;
     // client.post("https://www.lycamobile.es/wp-admin/admin-ajax.php")
     //     .form(&[
