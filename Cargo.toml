@@ -1,0 +1,24 @@
+[package]
+name = "nfhl_util"
+version = "0.1.0"
+edition = "2021"
+authors=["Jay Cary <jay@cary.pro>"]
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+geozero-shp = "0.3.0"
+geozero = "0.8.0"
+flatgeobuf = "0.7.0"
+tokio = { version = "1.17.0", features = ["full"] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = { version = "1.0.68", features = ["preserve_order"] }
+clap = { version = "3.1.8", features = ["derive"] }
+reqwest = { version = "0.11", features = ["blocking", "cookies"] }
+scraper = "0.12.0"
+regex = "1"
+
+[patch.crates-io]
+geozero-shp = {path="../geozero/geozero-shp"}
+geozero = {path="../geozero/geozero"}
+
